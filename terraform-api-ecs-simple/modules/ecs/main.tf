@@ -1,10 +1,43 @@
+resource "aws_iam_role" "ecs_execution_role" {
+  name = "${var.project}-${var.environment}-ecs-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ecs-tasks.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
+  role       = aws_iam_role.ecs_execution_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
+resource "aws_cloudwatch_log_group" "ecs" {
+  name              = "/ecs/${var.project}-${var.environment}"
+  retention_in_days = 30
+}
+
 resource "aws_ecs_cluster" "main" {
   name = "${var.project}-${var.environment}-cluster"
+
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
 }
 
 resource "aws_security_group" "ecs" {
   name        = "${var.project}-${var.environment}-ecs-sg"
   description = "ECS security group"
+  vpc_id      = var.vpc_id
 
   ingress {
     from_port       = var.container_port
@@ -19,6 +52,11 @@ resource "aws_security_group" "ecs" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
+
+  tags = {
+    Name        = "${var.project}-${var.environment}-ecs-sg"
+    Environment = var.environment
+  }
 }
 
 resource "aws_ecs_task_definition" "app" {
@@ -27,6 +65,7 @@ resource "aws_ecs_task_definition" "app" {
   network_mode             = "awsvpc"
   cpu                      = 256
   memory                   = 512
+  execution_role_arn       = aws_iam_role.ecs_execution_role.arn
 
   container_definitions = jsonencode([
     {
@@ -51,11 +90,13 @@ resource "aws_ecs_task_definition" "app" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          "awslogs-group"         = "/ecs/${var.project}-${var.environment}"
+          "awslogs-group"         = aws_cloudwatch_log_group.ecs.name
           "awslogs-region"        = "us-east-1"
           "awslogs-stream-prefix" = "ecs"
         }
       }
+
+      essential = true
     }
   ])
 }
@@ -79,6 +120,7 @@ resource "aws_ecs_service" "app" {
   }
 }
 
+# Variables
 variable "project" {
   type = string
 }
@@ -95,26 +137,27 @@ variable "container_port" {
   type = number
 }
 
-variable "environment_variables" {
-  type = map(string)
+variable "vpc_id" {
+  type = string
 }
 
 variable "subnet_ids" {
   type = list(string)
 }
 
-variable "target_group_arn" {
-  type = string
+variable "environment_variables" {
+  type = map(string)
 }
 
 variable "alb_security_group_id" {
   type = string
 }
 
-output "ecs_service_id" {
-  value = aws_ecs_service.app.id
+variable "target_group_arn" {
+  type = string
 }
 
+# Outputs
 output "security_group_id" {
   value = aws_security_group.ecs.id
 }

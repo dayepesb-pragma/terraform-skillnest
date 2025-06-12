@@ -28,6 +28,7 @@ module "ecs" {
 
   container_image = var.container_image
   container_port  = var.container_port
+  vpc_id          = module.vpc.vpc_id
   subnet_ids      = module.vpc.private_subnet_ids
 
   environment_variables = var.environment_variables
@@ -38,8 +39,10 @@ module "ecs" {
 module "rds" {
   source = "./modules/rds"
 
-  project     = var.project
-  environment = var.environment
+  project            = var.project
+  environment        = var.environment
+  vpc_id             = module.vpc.vpc_id
+  private_subnet_ids = module.vpc.private_subnet_ids
 
   db_password       = var.db_password
   db_username       = var.db_username
